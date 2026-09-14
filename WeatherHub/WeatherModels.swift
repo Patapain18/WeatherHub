@@ -1151,3 +1151,45 @@ struct Simulation: Equatable {
     }
 }
 
+
+
+// MARK: - Visite guidée
+
+/// Une suite d'étapes jouées toutes seules, pour les démonstrations et
+/// les vidéos — le mode démo, mais sur un minuteur. Argument de
+/// lancement, par exemple :
+///
+///     --visite=attente:20,moment.jour:0,rain:4,thunder:9,onglet.carte:5,reel
+///
+/// Une étape = `<condition>:<secondes>` (les noms du mode démo),
+/// `moment.<jour|lever|coucher|nuit>:<secondes>`,
+/// `onglet.<weather|horaire|carte|sport|profile>:<secondes>`,
+/// `attente:<secondes>`, et `reel` pour revenir à la vraie météo.
+struct Visite {
+    struct Etape {
+        enum Action {
+            case condition(Simulation.Condition), moment(Simulation.Moment), onglet(String), attente, reel
+        }
+        let action: Action
+        let duree: TimeInterval
+    }
+    let etapes: [Etape]
+
+    static func depuisArguments(_ arguments: [String]) -> Visite? {
+        guard let a = arguments.first(where: { $0.hasPrefix("--visite=") }) else { return nil }
+        var etapes: [Etape] = []
+        for mot in a.dropFirst("--visite=".count).split(separator: ",").map(String.init) {
+            let parts = mot.split(separator: ":").map(String.init)
+            guard let nom = parts.first else { continue }
+            let duree = parts.count > 1 ? (Double(parts[1]) ?? 3) : 3
+            if nom == "attente" { etapes.append(Etape(action: .attente, duree: duree)) }
+            else if nom == "reel" { etapes.append(Etape(action: .reel, duree: duree)) }
+            else if nom.hasPrefix("onglet.") { etapes.append(Etape(action: .onglet(String(nom.dropFirst(7))), duree: duree)) }
+            else if nom.hasPrefix("moment."), let m = Simulation.Moment(rawValue: String(nom.dropFirst(7))) {
+                etapes.append(Etape(action: .moment(m), duree: duree))
+            }
+            else if let c = Simulation.Condition(rawValue: nom) { etapes.append(Etape(action: .condition(c), duree: duree)) }
+        }
+        return etapes.isEmpty ? nil : Visite(etapes: etapes)
+    }
+}

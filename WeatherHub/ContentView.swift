@@ -199,6 +199,10 @@ struct ContentView: View {
             .animation(.spring(duration: 0.35, bounce: 0.05), value: barreVillesAffichee)
             }
             .environment(\.colorScheme, schemaEffectif)
+            // La visite guidée change d'onglet toute seule
+            .onChange(of: vm.visiteOnglet) { _, nom in
+                if let nom, let tab = AppTab(rawValue: nom) { selectionner(tab) }
+            }
 
             // MARK: Popup "Quoi de neuf"
             if showWhatsNew, let version = VersionHistory.current {
@@ -235,6 +239,7 @@ struct ContentView: View {
             vm.restaurerApercu()
             vm.fetchWeather()
             vm.surveillerFavoris()
+            if let visite = Visite.depuisArguments(CommandLine.arguments) { vm.demarrerVisite(visite) }
             if !accountStore.isOnboarded {
                 showOnboarding = true
             }
@@ -289,7 +294,14 @@ struct ContentView: View {
                 }
             }
             Section("Affichage") {
-                Toggle(isOn: $barreVillesActivee) { Label("Barre des villes", systemImage: "sidebar.left") }
+                // Un bouton plutôt qu'un Toggle : dans un Menu SwiftUI, un
+                // Toggle lié à un AppStorage s'est retrouvé écrit à « faux »
+                // sans qu'on y touche (vu au banc d'essai). Un bouton n'écrit
+                // que quand on clique.
+                Button { withAnimation { barreVillesActivee.toggle() } } label: {
+                    Label(barreVillesActivee ? "Masquer la barre des villes" : "Afficher la barre des villes",
+                          systemImage: barreVillesActivee ? "sidebar.leading" : "sidebar.left")
+                }
             }
             Section("Thème") {
                 Button { withAnimation { appearanceMode = "dark" } } label: {

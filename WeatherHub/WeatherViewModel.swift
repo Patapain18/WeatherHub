@@ -49,6 +49,27 @@ final class WeatherViewModel: ObservableObject {
 
     private let service = WeatherService.shared
 
+    // MARK: - Visite guidée
+
+    /// L'onglet demandé par la visite guidée ; ContentView l'observe.
+    @Published var visiteOnglet: String? = nil
+
+    /// Joue les étapes l'une après l'autre (voir `Visite`).
+    func demarrerVisite(_ visite: Visite) {
+        Task { @MainActor in
+            for etape in visite.etapes {
+                switch etape.action {
+                case .condition(let c): simulation.condition = c
+                case .moment(let m):    simulation.moment = m
+                case .onglet(let nom):  visiteOnglet = nom
+                case .reel:             simulation = Simulation()
+                case .attente:          break
+                }
+                try? await Task.sleep(nanoseconds: UInt64(max(0, etape.duree) * 1_000_000_000))
+            }
+        }
+    }
+
     // MARK: - Barre latérale : la météo de chaque ville favorite
 
     /// La météo du moment de chaque ville de la barre latérale
