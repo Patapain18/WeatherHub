@@ -1,0 +1,16 @@
+# La clé API — jamais dans git (modèle : WeatherHub/Cles.exemple.swift)
+WeatherHub/Cles.swift
+
+# Xcode : réglages personnels, index, produits de compilation
+xcuserdata/
+*.xcuserstate
+DerivedData/
+build/
+*.xcscmblueprint
+
+# Swift Package Manager
+.swiftpm/
+/Packages/
+
+# macOS
+.DS_Store
