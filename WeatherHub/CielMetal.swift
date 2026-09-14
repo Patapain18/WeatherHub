@@ -1,5 +1,6 @@
 import SwiftUI
 import MetalKit
+import IOKit.ps
 
 // ╔══════════════════════════════════════════════════════════════════╗
 // ║  CielMetal — la couche GPU sous le contenu                       ║
@@ -74,7 +75,7 @@ struct CielMetal: NSViewRepresentable {
     var condition: ConditionMetal
     var intensite: Float           // bruine 0,45 → averse 1
     var encreSombre: Bool          // thème clair de jour : particules sombres
-    var vent: Float
+    var vent: Float                // signé : > 0 penche vers la gauche, < 0 vers la droite
     var soleil: SIMD2<Float>       // position du soleil dans l'écran (uv)
     var elevation: Float           // −1 → 1 ; ≤ 0, c'est la nuit (canicule et grand froid en ont besoin)
     var crepuscule: Float
@@ -87,14 +88,15 @@ struct CielMetal: NSViewRepresentable {
     func makeCoordinator() -> Coordinateur { Coordinateur() }
 
     func makeNSView(context: Context) -> MTKView {
-        let vue = MTKView(frame: .zero, device: MTLCreateSystemDefaultDevice())
+        let vue = VueCiel(frame: .zero, device: MTLCreateSystemDefaultDevice())
         vue.colorPixelFormat = .bgra8Unorm
         vue.framebufferOnly = true
-        vue.preferredFramesPerSecond = 60
+        vue.preferredFramesPerSecond = Alimentation.imagesParSeconde
         vue.isPaused = false
         vue.enableSetNeedsDisplay = false
         vue.layer?.isOpaque = true
         vue.delegate = context.coordinator
+        vue.coordinateur = context.coordinator
         context.coordinator.preparer(vue)
         return vue
     }
@@ -111,12 +113,38 @@ struct CielMetal: NSViewRepresentable {
         c.cible.elevation = elevation
         c.cible.crepuscule = crepuscule
         c.cible.eclat = eclat
-        // En pause, la dernière image reste affichée : un ciel figé, pas noir.
-        if vue.isPaused != !anime {
-            vue.isPaused = !anime
-            if !anime { vue.enableSetNeedsDisplay = true; vue.needsDisplay = true }
-            else { vue.enableSetNeedsDisplay = false }
+        c.animeSwiftUI = anime
+        c.appliquerPause(vue)
+    }
+
+    /// Le MTKView, avec deux oreilles : l'occultation de sa fenêtre
+    /// (cachée derrière une autre, réduite, sur un autre bureau) et la
+    /// source d'énergie du Mac. Un décor que personne ne voit ne se
+    /// dessine pas ; sur batterie, il se dessine deux fois moins souvent.
+    final class VueCiel: MTKView {
+        weak var coordinateur: Coordinateur?
+        private var observateurs: [NSObjectProtocol] = []
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            observateurs.forEach { NotificationCenter.default.removeObserver($0) }
+            observateurs.removeAll()
+            guard let fenetre = window else { return }
+            observateurs.append(NotificationCenter.default.addObserver(
+                forName: NSWindow.didChangeOcclusionStateNotification, object: fenetre, queue: .main) { [weak self] _ in
+                    guard let self, let c = self.coordinateur else { return }
+                    c.visible = fenetre.occlusionState.contains(.visible)
+                    c.appliquerPause(self)
+                })
+            observateurs.append(NotificationCenter.default.addObserver(
+                forName: Alimentation.aChange, object: nil, queue: .main) { [weak self] _ in
+                    self?.preferredFramesPerSecond = Alimentation.imagesParSeconde
+                })
+            coordinateur?.visible = fenetre.occlusionState.contains(.visible)
+            if let c = coordinateur { c.appliquerPause(self) }
         }
+
+        deinit { observateurs.forEach { NotificationCenter.default.removeObserver($0) } }
     }
 
     /// Le délégué du MTKView : il tient le pipeline et dessine chaque image.
@@ -129,6 +157,19 @@ struct CielMetal: NSViewRepresentable {
         /// quand la condition change, comme l'ancien `.animation`).
         var cible = UniformesCiel()
         private var courant = UniformesCiel()
+        /// Ce que SwiftUI demande (fenêtre active, animations autorisées)
+        /// et ce que la fenêtre dit (visible à l'écran) : il faut les deux.
+        var animeSwiftUI = true
+        var visible = true
+
+        /// En pause, la dernière image reste affichée : un ciel figé, pas noir.
+        func appliquerPause(_ vue: MTKView) {
+            let pause = !animeSwiftUI || !visible
+            guard vue.isPaused != pause else { return }
+            vue.isPaused = pause
+            if pause { vue.enableSetNeedsDisplay = true; vue.needsDisplay = true }
+            else { vue.enableSetNeedsDisplay = false }
+        }
 
         func preparer(_ vue: MTKView) {
             guard let device = vue.device, let biblio = device.makeDefaultLibrary(),
@@ -157,7 +198,7 @@ struct CielMetal: NSViewRepresentable {
             courant.bas  += (cible.bas  - courant.bas)  * k
             courant.encre += (cible.encre - courant.encre) * k
             courant.condition = cible.condition
-            courant.vent = cible.vent
+            courant.vent += (cible.vent - courant.vent) * k          // un vent qui tourne : la pluie se redresse puis repenche
             courant.intensite += (cible.intensite - courant.intensite) * k
             courant.soleil += (cible.soleil - courant.soleil) * k
             courant.elevation += (cible.elevation - courant.elevation) * k
@@ -174,6 +215,39 @@ struct CielMetal: NSViewRepresentable {
             enc.endEncoding()
             commandes.present(drawable)
             commandes.commit()
+        }
+    }
+}
+
+// MARK: - L'énergie
+
+/// Sur batterie (ou en mode économie d'énergie), le ciel tourne à 30
+/// images par seconde au lieu de 60 : la moitié du travail, et l'œil ne
+/// voit pas la différence sur un décor qui dérive lentement. IOKit dit
+/// quelle source alimente le Mac ; on s'y abonne pour changer en direct
+/// quand le câble est branché ou débranché.
+enum Alimentation {
+    static let aChange = Notification.Name("WeatherHub.alimentationAChange")
+
+    static var surBatterie: Bool {
+        guard let infos = IOPSCopyPowerSourcesInfo()?.takeRetainedValue(),
+              let type = IOPSGetProvidingPowerSourceType(infos)?.takeUnretainedValue() as String? else { return false }
+        return type == kIOPSBatteryPowerValue
+    }
+
+    static var imagesParSeconde: Int {
+        (surBatterie || ProcessInfo.processInfo.isLowPowerModeEnabled) ? 30 : 60
+    }
+
+    /// À appeler une fois au lancement : branche les deux écouteurs
+    /// (source d'énergie IOKit, mode économie d'énergie de macOS).
+    static func surveiller() {
+        let source = IOPSNotificationCreateRunLoopSource({ _ in
+            NotificationCenter.default.post(name: Alimentation.aChange, object: nil)
+        }, nil)?.takeRetainedValue()
+        if let source { CFRunLoopAddSource(CFRunLoopGetMain(), source, .defaultMode) }
+        NotificationCenter.default.addObserver(forName: .NSProcessInfoPowerStateDidChange, object: nil, queue: .main) { _ in
+            NotificationCenter.default.post(name: Alimentation.aChange, object: nil)
         }
     }
 }

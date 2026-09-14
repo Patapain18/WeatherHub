@@ -9,6 +9,11 @@ struct WeatherHubApp: App {
     /// Un seul modèle pour la fenêtre ET la barre de menus.
     @StateObject private var vm = WeatherViewModel()
 
+    init() {
+        // Le ciel GPU écoute la source d'énergie : 30 i/s sur batterie.
+        Alimentation.surveiller()
+    }
+
     var body: some Scene {
         WindowGroup {
             ContentView(vm: vm)

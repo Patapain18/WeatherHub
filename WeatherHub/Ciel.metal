@@ -17,7 +17,7 @@ struct Uniformes {
     int    condition;    // 0 rien, 1 pluie, 2 bruine, 3 brouillard, 4 neige, 5 dégagé, 6 nuit dégagée, 7 nuages, 8 orage, 9 averse
                          // 10 tornade, 11 tempête, 12 grêle, 13 canicule, 14 grand froid, 15 poussière, 16 cyclone, 17 blizzard, 18 verglas, 19 déluge
     float  intensite;    // 0 → 1
-    float  vent;         // inclinaison des traits, −1 → 1
+    float  vent;         // inclinaison des traits, −1 → 1 ; le signe est le sens (> 0 : vers la gauche)
     float  elevation;    // soleil, −1 → 1
     float2 soleil;       // position du soleil dans l'écran (uv), même formule que l'ancien ClearFX
     float  crepuscule;   // 1 pile au lever/coucher, 0 sinon
@@ -206,9 +206,10 @@ float3 nuit(float2 uv, float2 p, float aspect, float t, float3 ciel) {
 
 /// Les nuages : deux nappes de bruit qui dérivent à des vitesses
 /// différentes ; le dessous des nuages est plus sombre que le dessus.
-float3 nuages(float2 p, float t, float3 ciel, float3 encre, float intensite) {
-    float n1 = fbm(p * 1.5 + float2(t * 0.018, 0.0));
-    float n2 = fbm(p * 3.1 + float2(-t * 0.03, 3.1));
+float3 nuages(float2 p, float t, float vent, float3 ciel, float3 encre, float intensite) {
+    float sens = vent < 0.0 ? -1.0 : 1.0;                    // les nuages aussi vont dans le sens du vent
+    float n1 = fbm(p * 1.5 + float2(t * 0.018 * sens, 0.0));
+    float n2 = fbm(p * 3.1 + float2(-t * 0.03 * sens, 3.1));
     float dens = smoothstep(0.40, 0.74, n1 * 0.7 + n2 * 0.3);
     float3 clair = mix(encre, ciel, 0.5);
     float3 c = mix(ciel, clair, dens * 0.5 * intensite);
@@ -368,14 +369,14 @@ float3 orage(float2 uv, float2 p, float aspect, float t, float vent, float inten
 //  briques à eux : les rafales, les grêlons et le givre. Tout souffle
 //  vers la gauche, comme la pluie et la neige (le vent vient de droite).
 
-/// Le vent rendu visible : de longues traînées presque horizontales qui
-/// filent de droite à gauche. Même principe que la pluie, mais la cellule
-/// est couchée (large 0,34, basse 0,028) et c'est vers la gauche que la
-/// grille défile. `pente` : les traînées descendent un peu en avançant.
-float rafales(float2 p, float t, float vitesse, float densite, float pente, float epaisseur) {
+/// Le vent rendu visible : de longues traînées presque horizontales.
+/// Même principe que la pluie, mais la cellule est couchée (large 0,34,
+/// basse 0,028) et la grille défile à l'horizontale, dans le sens du vent
+/// (`sens` = ±1). `pente` : les traînées descendent un peu en avançant.
+float rafales(float2 p, float t, float vitesse, float densite, float pente, float epaisseur, float sens) {
     float2 q = p;
-    q.y += q.x * pente;
-    q.x += t * vitesse;
+    q.y += q.x * pente * sens;
+    q.x += t * vitesse * sens;
     float2 taille = float2(0.34, 0.028);
     float2 cellule = floor(q / taille), f = fract(q / taille);
     if (hash12(cellule) > densite) return 0;
@@ -455,8 +456,9 @@ float3 tornade(float2 uv, float2 p, float aspect, float t, float vent, float3 ci
 /// Tempête : l'averse fouettée par le vent, et le vent lui-même rendu
 /// visible — deux couches de traînées, la plus lointaine plus fine.
 float3 tempete(float2 uv, float2 p, float t, float vent, float3 ciel, float3 encre) {
-    float3 c = averse(uv, p, t, vent * 1.4 + 0.3, 1.0, ciel, encre);
-    float v = rafales(p, t, 1.1, 0.5, 0.14, 0.06) + rafales(p + 4.3, t, 1.6, 0.35, 0.14, 0.05) * 0.7;
+    float sens = vent < 0.0 ? -1.0 : 1.0;
+    float3 c = averse(uv, p, t, sens * (abs(vent) * 1.4 + 0.3), 1.0, ciel, encre);
+    float v = rafales(p, t, 1.1, 0.5, 0.14, 0.06, sens) + rafales(p + 4.3, t, 1.6, 0.35, 0.14, 0.05, sens) * 0.7;
     return mix(c, encre, clamp(v, 0.0, 1.0) * 0.20);
 }
 
@@ -508,23 +510,24 @@ float3 grandFroid(float2 uv, float2 p, float aspect, float t, float elevation, f
 
 /// Tempête de poussière : la brume du brouillard, mais ocre, et des grains
 /// allongés qui filent à l'horizontale.
-float grains(float2 p, float t, float vitesse) {
+float grains(float2 p, float t, float vitesse, float sens) {
     float2 taille = float2(0.06, 0.016);
     float2 q = p;
-    q.x += t * vitesse;
+    q.x += t * vitesse * sens;
     float2 cellule = floor(q / taille), f = fract(q / taille);
     if (hash12(cellule) > 0.5) return 0;
     float2 centre = float2(0.2 + 0.6 * hash12(cellule + 1.3), 0.3 + 0.4 * hash12(cellule + 2.6));
     float r = 0.05 + 0.12 * hash12(cellule + 4.1);
     return smoothstep(r, r * 0.3, length(f - centre)) * (0.3 + 0.7 * hash12(cellule + 5.5));
 }
-float3 poussiere(float2 p, float t, float3 ciel) {
+float3 poussiere(float2 p, float t, float vent, float3 ciel) {
+    float sens = vent < 0.0 ? -1.0 : 1.0;
     float3 ocre = float3(0.85, 0.70, 0.45);
-    float f1 = fbm(p * 2.2 + float2(t * 0.09, t * 0.012));
-    float f2 = fbm(p * 5.0 - float2(t * 0.15, t * 0.02) + 4.7);
+    float f1 = fbm(p * 2.2 + float2(t * 0.09 * sens, t * 0.012));
+    float f2 = fbm(p * 5.0 - float2(t * 0.15 * sens, t * 0.02) + 4.7);
     float brume = smoothstep(0.30, 0.85, f1 * 0.65 + f2 * 0.35);
     float3 c = mix(ciel, ocre, brume * 0.38);
-    float g = grains(p, t, 0.5) + grains(p + 3.1, t, 0.8) * 0.7;
+    float g = grains(p, t, 0.5, sens) + grains(p + 3.1, t, 0.8, sens) * 0.7;
     return mix(c, ocre, clamp(g, 0.0, 1.0) * 0.32);
 }
 
@@ -533,14 +536,15 @@ float3 poussiere(float2 p, float t, float3 ciel) {
 /// qu'en tempête. La spirale d'Archimède : le rayon et l'angle avancent
 /// ensemble, sin(2π(4,3 r − a/2π)) — 4,3 tours de bande par unité de rayon.
 float3 cyclone(float2 uv, float2 p, float aspect, float t, float vent, float3 ciel, float3 encre) {
-    float3 c = averse(uv, p, t, vent * 1.5 + 0.4, 1.0, ciel, encre);
+    float sens = vent < 0.0 ? -1.0 : 1.0;
+    float3 c = averse(uv, p, t, sens * (abs(vent) * 1.5 + 0.4), 1.0, ciel, encre);
     float2 d = p - float2(0.88 * aspect, 0.06);
     float r = length(d), a = atan2(d.y, d.x);
     float spirale = 0.5 + 0.5 * sin(6.2832 * (r * 4.3 - a / 6.2832) + t * 0.35);
     float bande = smoothstep(0.35, 0.75, spirale + (fbm(p * 3.0 + t * 0.05) - 0.5) * 0.9);
     float3 clair = mix(encre, ciel, 0.5);                                     // la couleur des nuages
     c = mix(c, clair, 0.24 * bande * smoothstep(0.06, 0.25, r));
-    float v = rafales(p, t, 1.4, 0.7, 0.18, 0.07) + rafales(p + 4.3, t, 1.9, 0.5, 0.18, 0.06) * 0.7;
+    float v = rafales(p, t, 1.4, 0.7, 0.18, 0.07, sens) + rafales(p + 4.3, t, 1.9, 0.5, 0.18, 0.06, sens) * 0.7;
     return mix(c, encre, clamp(v, 0.0, 1.0) * 0.24);
 }
 
@@ -548,12 +552,13 @@ float3 cyclone(float2 uv, float2 p, float aspect, float t, float vent, float3 ci
 /// plus rapide et couchée par le vent, et les traînées du vent — on ne
 /// voit plus rien.
 float3 blizzard(float2 p, float t, float vent, float3 ciel, float3 encre) {
-    float f1 = fbm(p * 2.2 + float2(t * 0.12, t * 0.02));
-    float f2 = fbm(p * 5.0 - float2(t * 0.2, t * 0.03) + 4.7);
+    float sens = vent < 0.0 ? -1.0 : 1.0;
+    float f1 = fbm(p * 2.2 + float2(t * 0.12 * sens, t * 0.02));
+    float f2 = fbm(p * 5.0 - float2(t * 0.2 * sens, t * 0.03) + 4.7);
     float voile = smoothstep(0.30, 0.85, f1 * 0.65 + f2 * 0.35);
     float3 c = mix(ciel, float3(1.0), 0.10 + voile * 0.30);
-    c = mix(c, encre, neige(p * 1.5, t * 2.2, 2.0 + vent * 2.0, 1.0) * 0.85);   // grille resserrée : flocons plus fins
-    float v = rafales(p, t, 1.2, 0.6, 0.10, 0.08) + rafales(p + 7.7, t, 1.7, 0.45, 0.10, 0.06) * 0.6;
+    c = mix(c, encre, neige(p * 1.5, t * 2.2, sens * (2.0 + abs(vent) * 2.0), 1.0) * 0.85);   // grille resserrée : flocons plus fins
+    float v = rafales(p, t, 1.2, 0.6, 0.10, 0.08, sens) + rafales(p + 7.7, t, 1.7, 0.45, 0.10, 0.06, sens) * 0.6;
     return mix(c, float3(1.0), clamp(v, 0.0, 1.0) * 0.28);
 }
 
@@ -616,7 +621,7 @@ fragment float4 ciel_fragment(SortieVertex in [[stage_in]], constant Uniformes& 
     } else if (u.condition == 6) {
         c = nuit(uv, p, aspect, u.temps, ciel);
     } else if (u.condition == 7) {
-        c = nuages(p, u.temps, ciel, encre, u.intensite);
+        c = nuages(p, u.temps, u.vent, ciel, encre, u.intensite);
     } else if (u.condition == 3) {
         float f1 = fbm(p * 2.2 + float2(u.temps * 0.045, u.temps * 0.012));
         float f2 = fbm(p * 5.0 - float2(u.temps * 0.075, u.temps * 0.02) + 4.7);
@@ -636,7 +641,7 @@ fragment float4 ciel_fragment(SortieVertex in [[stage_in]], constant Uniformes& 
     } else if (u.condition == 14) {
         c = grandFroid(uv, p, aspect, u.temps, u.elevation, u.vent, u.soleil, u.crepuscule, ciel, encre);
     } else if (u.condition == 15) {
-        c = poussiere(p, u.temps, ciel);
+        c = poussiere(p, u.temps, u.vent, ciel);
     } else if (u.condition == 16) {
         c = cyclone(uv, p, aspect, u.temps, u.vent, ciel, encre);
     } else if (u.condition == 17) {

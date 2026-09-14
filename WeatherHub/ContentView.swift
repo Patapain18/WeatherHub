@@ -465,13 +465,23 @@ struct ContentView: View {
             let intensite: Float = cle == "drizzle" ? 0.45
                                  : cle == "rain" && !averse ? Float(0.55 + min(mm, 3) / 8)   // 0,55 → 0,93
                                  : 1
+            // Le vent : la force donne l'inclinaison (0,15 → 0,65), la direction
+            // donne le sens. `windDirection` est la direction D'OÙ vient le vent
+            // (convention météo) : un vent d'est (90°) pousse vers l'ouest, donc
+            // vers la gauche de l'écran — c'est le sens positif du shader ;
+            // un vent d'ouest (270°) penche tout vers la droite. Nord ou sud :
+            // presque droit, comme dans la réalité.
+            let direction = Double(vm.state.windDirection) * .pi / 180
+            let vent = Float(sin(direction) * (0.15 + min(vm.state.windSpeed, 60) / 120))
             CielMetal(haut: rgb[0], bas: rgb[1],
                       condition: ConditionMetal.depuis(cle: cle, estNuit: phase.estNuit, averse: averse),
                       intensite: intensite,
                       encreSombre: schemaEffectif == .light,
-                      vent: Float(0.15 + min(vm.state.windSpeed, 60) / 120),
-                      // Même trajet que l'ancien ClearFX : d'est en ouest, plus haut à midi
-                      soleil: [Float(0.12 + phase.progression * 0.76), Float(0.80 - phase.elevation * 0.74)],
+                      vent: vent,
+                      // D'est en ouest, plus haut à midi. Le sommet est à 17 % de la
+                      // hauteur : le disque (8 %) passe sous le champ de recherche
+                      // au lieu de se cacher derrière.
+                      soleil: [Float(0.12 + phase.progression * 0.76), Float(0.80 - phase.elevation * 0.63)],
                       elevation: Float(phase.elevation),
                       crepuscule: Float(phase.teinteCrepusculaire),
                       eclat: eclatSoleil(progression: phase.progression),
