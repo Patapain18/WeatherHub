@@ -145,7 +145,7 @@ enum Penalite {
     /// Rampe douce de 0 à 1 entre `bas` et `haut`, en *smoothstep*
     /// (3t² − 2t³). Sa pente est nulle aux deux extrémités : le score
     /// ne « saute » jamais. C'est la même courbe que celle utilisée pour
-    /// lisser le bruit dans WeatherBackground.
+    /// lisser le bruit du ciel dans Ciel.metal (`bruit()`).
     static func rampe(_ v: Double, bas: Double, haut: Double) -> Double {
         guard haut > bas else { return v >= haut ? 1 : 0 }
         let t = Swift.min(Swift.max((v - bas) / (haut - bas), 0), 1)

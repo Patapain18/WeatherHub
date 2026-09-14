@@ -103,7 +103,6 @@ struct ContentView: View {
         ZStack {
             // MARK: Background
             backgroundLayer
-            WeatherBackground(condition: vm.conditionDecor, phase: vm.phaseSolaire)
             readabilityScrim
 
             // MARK: Main content
@@ -452,10 +451,9 @@ struct ContentView: View {
     // MARK: - Fond dégradé dynamique
 
     /// Le ciel. Sur un Mac avec Metal (tous), c'est la couche GPU
-    /// `CielMetal` : le dégradé, et toutes les intempéries — ordinaires et
-    /// extrêmes — calculées pixel par pixel. Le dégradé SwiftUI ne sert
-    /// plus que de repli. Seuls les éclairs de l'orage restent au Canvas de
-    /// `WeatherBackground`, posé par-dessus.
+    /// `CielMetal` : le dégradé, et toutes les intempéries — ordinaires,
+    /// extrêmes, éclairs compris — calculées pixel par pixel. Le dégradé
+    /// SwiftUI ne sert plus que de repli, immobile.
     @ViewBuilder private var backgroundLayer: some View {
         if CielMetal.disponible {
             let rgb = skyRGB(for: vm.backgroundConditionKey)

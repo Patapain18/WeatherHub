@@ -263,6 +263,105 @@ float neige(float2 p, float t, float vent, float intensite) {
     return clamp(total, 0.0, 1.0);
 }
 
+// ── Orage ───────────────────────────────────────────────────────────
+//  Les éclairs étaient la dernière chose dessinée par le Canvas. Ici un
+//  éclair n'est pas une ligne brisée mémorisée : c'est une fonction x(y)
+//  — pour chaque hauteur, où passe l'éclair — et chaque pixel mesure sa
+//  distance horizontale à ce tracé.
+
+/// Bruit de valeur à une dimension, pour tordre le tracé d'un éclair.
+float bruit1(float x, float graine) {
+    float i = floor(x), f = fract(x);
+    f = f * f * (3 - 2 * f);
+    return mix(hash12(float2(i, graine)), hash12(float2(i + 1, graine)), f);
+}
+
+/// Le tracé d'un éclair : une droite du point de départ (en haut) au
+/// point d'impact (en bas), déformée par six octaves de bruit d'amplitude
+/// décroissante — c'est ce que produisait la subdivision par le milieu
+/// de l'ancien Canvas, en une seule formule.
+float traceEclair(float y, float graine, float aspect) {
+    float xHaut = aspect * (0.15 + 0.70 * hash12(float2(graine, 1.0)));
+    float xBas  = aspect * (0.20 + 0.60 * hash12(float2(graine, 2.0)));
+    float x = mix(xHaut, xBas, y);
+    float amp = 0.11 * aspect, freq = 2.0;
+    for (int k = 0; k < 6; k++) {
+        x += (bruit1(y * freq + graine * 0.37, graine + float(k) * 11.0) - 0.5) * amp;
+        amp *= 0.5; freq *= 2.0;
+    }
+    return x;
+}
+
+/// Un éclair complet : le tracé principal, quatre branches qui s'en
+/// écartent en descendant, la lueur (les six passes du Canvas condensées
+/// en deux exponentielles et un cœur blanc), et l'impact au sol.
+/// Retourne la lumière à ajouter au pixel.
+float3 eclair(float2 p, float2 uv, float aspect, float graine, float opacite) {
+    float x = traceEclair(uv.y, graine, aspect);
+    float d = abs(p.x - x);
+    float branches = 0;
+    for (int b = 0; b < 4; b++) {
+        float g = graine + 100.0 + float(b) * 7.0;
+        float yb = 0.15 + 0.6 * hash12(float2(g, 3.0));
+        float longueur = 0.10 + 0.20 * hash12(float2(g, 4.0));
+        if (uv.y >= yb && uv.y <= yb + longueur) {
+            float s = (uv.y - yb) / longueur;
+            float sens = hash12(float2(g, 5.0)) > 0.5 ? 1.0 : -1.0;
+            float xb = traceEclair(yb, graine, aspect)
+                     + sens * s * (0.08 + 0.12 * hash12(float2(g, 6.0)))
+                     + (bruit1(s * 6.0, g) - 0.5) * 0.04;
+            float db = abs(p.x - xb);
+            branches += (exp(-db * 250.0) * 0.30 + exp(-db * 60.0) * 0.10) * (1.0 - s * 0.6);
+        }
+    }
+    float3 c = float3(0.30, 0.45, 1.0) * exp(-d * 40.0) * 0.10          // la lueur bleue, diffuse
+             + float3(0.60, 0.78, 1.0) * exp(-d * 160.0) * 0.35         // la lueur claire
+             + float3(0.98, 0.99, 1.0) * smoothstep(0.0022, 0.0006, d)  // le cœur : blanc, quel que soit le thème
+             + float3(0.60, 0.78, 1.0) * branches;
+    float2 di = (p - float2(traceEclair(1.0, graine, aspect), 0.98)) * float2(1.0, 4.0);
+    c += float3(0.65, 0.82, 1.0) * exp(-dot(di, di) * 400.0) * 0.5 * smoothstep(0.25, 0.6, opacite);
+    return c * opacite;
+}
+
+/// L'orage : l'averse E, le double flash qui illumine le ciel (toutes
+/// les 6,5 s, avec un écho 3,2 s plus tard), les nuages allumés par le
+/// flash, et trois éclairs sur trois horloges — le minutage du Canvas.
+float3 orage(float2 uv, float2 p, float aspect, float t, float vent, float intensite, float3 ciel, float3 encre) {
+    float3 c = averse(uv, p, t, vent, intensite, ciel, encre);
+    float fc = fmod(t * 0.60, 6.5), fOp = 0;
+    if (fc < 0.035)      fOp = fc / 0.035 * 0.35;
+    else if (fc < 0.07)  fOp = 0.35 * (1 - (fc - 0.035) / 0.035) * 0.4;
+    else if (fc < 0.10)  fOp = 0.14 * ((fc - 0.07) / 0.03);
+    else if (fc < 0.20)  fOp = 0.14 * (1 - (fc - 0.10) / 0.10);
+    float fc2 = fmod(t * 0.60 + 3.2, 6.5);
+    if (fc2 < 0.05)      fOp += fc2 / 0.05 * 0.10;
+    else if (fc2 < 0.12) fOp += 0.10 * (1 - (fc2 - 0.05) / 0.07);
+    if (fOp > 0.001) {
+        c = mix(c, float3(0.82, 0.88, 1.0), fOp * (uv.y < 0.45 ? 1.0 : 0.40));   // plus fort en haut
+        if (fOp > 0.04) {
+            float n = fbm(p * 2.5 + float2(t * 0.02, 0.0));
+            float masse = smoothstep(0.45, 0.75, n) * smoothstep(0.30, 0.05, uv.y);
+            c = mix(c, float3(0.68, 0.76, 0.95), masse * fOp * 0.28);
+        }
+    }
+    float freqs[3] = {0.44, 0.33, 0.22};
+    float decal[3] = {1.3, 5.2, 2.1};
+    float periodes[3] = {6.0, 10.0, 14.0};
+    for (int i = 0; i < 3; i++) {
+        float phase = t * freqs[i] + decal[i];
+        float bc = fmod(phase, periodes[i]);
+        float dur = periodes[i] < 8.0 ? 0.60 : 0.40;
+        if (bc < dur) {
+            float rise = periodes[i] < 8.0 ? 0.08 : 0.05;
+            float op = bc < rise ? bc / rise : max(0.0, 1 - (bc - rise) / (dur - rise));
+            float mul = periodes[i] < 8.0 ? 1.0 : (periodes[i] < 12.0 ? 0.65 : 0.45);
+            float graine = floor(phase / periodes[i]) * 100.0 + float(i) * 77.0;   // stable pendant tout l'éclair
+            c += eclair(p, uv, aspect, graine, op * mul);
+        }
+    }
+    return c;
+}
+
 // ── Régimes extrêmes ────────────────────────────────────────────────
 //  Dix régimes, bâtis avec les briques choisies plus haut — l'averse E,
 //  la pluie fine D, la neige I, le soleil photographique — plus trois
@@ -508,8 +607,10 @@ fragment float4 ciel_fragment(SortieVertex in [[stage_in]], constant Uniformes& 
 
     if (u.condition == 1 || u.condition == 2) {
         c = pluieFine(uv, p, u.temps, u.vent, u.intensite, ciel, encre);      // pluie, bruine
-    } else if (u.condition == 8 || u.condition == 9) {
-        c = averse(uv, p, u.temps, u.vent, u.intensite, ciel, encre);         // averse, orage
+    } else if (u.condition == 9) {
+        c = averse(uv, p, u.temps, u.vent, u.intensite, ciel, encre);
+    } else if (u.condition == 8) {
+        c = orage(uv, p, aspect, u.temps, u.vent, u.intensite, ciel, encre);  // l'averse + les éclairs
     } else if (u.condition == 5) {
         c = beauTemps(p, aspect, u.temps, u.soleil, u.crepuscule, u.eclat, u.disque, ciel);
     } else if (u.condition == 6) {

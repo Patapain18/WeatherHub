@@ -45,7 +45,7 @@ enum ConditionMetal: Int32 {
         case "snow":    return .neige
         case "clear":   return estNuit ? .nuit : .degage
         case "cloud":   return .nuages
-        case "thunder": return .orage      // la pluie d'averse ; les éclairs restent au Canvas
+        case "thunder": return .orage      // l'averse E plus les éclairs
         // Les régimes extrêmes, par leur clé de décor (RegimeExtreme.cle).
         // Jour ou nuit, c'est le shader qui tranche, avec l'élévation du soleil.
         case "tornado":  return .tornade
@@ -61,9 +61,9 @@ enum ConditionMetal: Int32 {
         default:        return .aucune
         }
     }
-    /// Les clés dont le Canvas ne doit plus rien dessiner. Pas « thunder » :
-    /// il y dessine encore les éclairs (le GPU ne fait que sa pluie).
-    static let clesGerees: Set<String> = ["rain", "drizzle", "fog", "snow", "clear", "cloud",
+    /// Toutes les clés de décor de l'app : le GPU rend tout, le Canvas
+    /// `WeatherBackground` a été supprimé.
+    static let clesGerees: Set<String> = ["rain", "drizzle", "fog", "snow", "clear", "cloud", "thunder",
                                           "tornado", "storm", "hail", "heat", "cold", "dust",
                                           "cyclone", "blizzard", "sleet", "deluge"]
 }
