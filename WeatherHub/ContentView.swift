@@ -85,6 +85,9 @@ struct ContentView: View {
         AppTab.secondaires.contains(selectedTab) ? .plus : .onglet(selectedTab)
     }
     @AppStorage("appearanceMode") private var appearanceMode: String = "dark"
+    /// La barre latérale des villes (menu ⋯ → Affichage). Elle ne
+    /// s'affiche de toute façon que si la fenêtre est assez large.
+    @AppStorage("barreVilles") private var barreVillesActivee = true
 
     /// Thème réellement appliqué à la fenêtre. Suit `preferredColorScheme`,
     /// donc aussi le choix « Système ».
@@ -106,6 +109,16 @@ struct ContentView: View {
             readabilityScrim
 
             // MARK: Main content
+            // La barre des villes à gauche (fenêtre large), le contenu à
+            // droite. Le GeometryReader donne la largeur de la fenêtre :
+            // c'est elle qui décide si la barre a sa place.
+            GeometryReader { geo in
+            let barreVillesAffichee = barreVillesActivee && geo.size.width >= BarreVilles.largeurMinimaleFenetre
+            HStack(spacing: 0) {
+            if barreVillesAffichee {
+                BarreVilles(vm: vm)
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
             ZStack(alignment: .bottom) {
                 ZStack {
                     switch selectedTab {
@@ -171,7 +184,6 @@ struct ContentView: View {
                     .opacity(barreVisible ? 1 : 0)
                     .allowsHitTesting(barreVisible)
             }
-            .environment(\.colorScheme, schemaEffectif)
             .onPreferenceChange(OffsetDefilementKey.self) { offset in
                 if let offset { reagirAuDefilement(offset) }
             }
@@ -181,6 +193,12 @@ struct ContentView: View {
                 dernierOffset = 0
                 withAnimation(.spring(duration: 0.3)) { barreVisible = true }
             }
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
+            .environment(\.barreVillesVisible, barreVillesAffichee)
+            .animation(.spring(duration: 0.35, bounce: 0.05), value: barreVillesAffichee)
+            }
+            .environment(\.colorScheme, schemaEffectif)
 
             // MARK: Popup "Quoi de neuf"
             if showWhatsNew, let version = VersionHistory.current {
@@ -216,6 +234,7 @@ struct ContentView: View {
             // signalée comme telle, qu'un spinner vide.
             vm.restaurerApercu()
             vm.fetchWeather()
+            vm.surveillerFavoris()
             if !accountStore.isOnboarded {
                 showOnboarding = true
             }
@@ -268,6 +287,9 @@ struct ContentView: View {
                         Label(tab.label, systemImage: tab.icon)
                     }
                 }
+            }
+            Section("Affichage") {
+                Toggle(isOn: $barreVillesActivee) { Label("Barre des villes", systemImage: "sidebar.left") }
             }
             Section("Thème") {
                 Button { withAnimation { appearanceMode = "dark" } } label: {

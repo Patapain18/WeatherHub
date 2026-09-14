@@ -16,7 +16,7 @@ struct SportTabView: View {
                     HStack(spacing: 16) {
                         contextPill(icon: "thermometer.medium", label: "\(Int(vm.state.temperature))°C")
                         contextPill(icon: "wind",               label: "\(Int(vm.state.windSpeed)) km/h")
-                        contextPill(icon: "cloud",              label: vm.state.condition.isEmpty ? "—" : vm.state.condition)
+                        contextPill(icon: "cloud",              label: vm.state.condition.isEmpty ? "—" : vm.conditionLibelle)
                     }
                 }
 

@@ -16,6 +16,10 @@ struct WeatherTabView: View {
     @State private var suggestions: [VilleSuggestion] = []
     @State private var listeVisible = false
 
+    /// Quand la barre latérale des villes est affichée, les pastilles
+    /// feraient doublon.
+    @Environment(\.barreVillesVisible) private var barreVillesVisible
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             SondeDefilement()
@@ -297,7 +301,7 @@ struct WeatherTabView: View {
     /// « 16,9 », « °C », « Clear », « Fiabilité », « 92 % »…).
     private var resumeVocal: String {
         guard !vm.state.condition.isEmpty else { return "Météo en cours de chargement" }
-        var phrase = "\(vm.city.capitalized), \(Int(vm.state.temperature)) degrés, \(vm.state.condition)"
+        var phrase = "\(vm.city.capitalized), \(Int(vm.state.temperature)) degrés, \(vm.conditionLibelle)"
         phrase += ", ressenti \(Int(vm.state.feelsLike)) degrés"
         if vm.state.modelCount > 1 {
             phrase += ", accord des modèles \(vm.state.reliability) pour cent"
@@ -411,7 +415,7 @@ struct WeatherTabView: View {
 
     /// Une rangée de pastilles sous la recherche : un clic, une ville.
     @ViewBuilder private var favoris: some View {
-        if !citiesManager.cities.isEmpty {
+        if !citiesManager.cities.isEmpty && !barreVillesVisible {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     ForEach(citiesManager.cities) { city in

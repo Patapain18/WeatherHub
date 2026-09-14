@@ -39,6 +39,7 @@ final class WeatherViewModel: ObservableObject {
     private func rejouerSimulation() {
         guard let etatReel else { return }
         state = simulation.appliquer(a: etatReel)
+        synchroniserApercuCourant()
         sports = evaluerSports()
         recalculerAlertes()
         pluieImminente = simulation.pluie(reelle: pluieReelle)
@@ -47,6 +48,51 @@ final class WeatherViewModel: ObservableObject {
     }
 
     private let service = WeatherService.shared
+
+    // MARK: - Barre latérale : la météo de chaque ville favorite
+
+    /// La météo du moment de chaque ville de la barre latérale
+    /// (clé : le nom en minuscules).
+    @Published var apercus: [String: ApercuVille] = [:]
+    private var abonnementFavoris: AnyCancellable?
+    private var minuterieApercus: Timer?
+
+    /// À appeler une fois, quand la fenêtre apparaît : recharge les aperçus
+    /// à chaque changement de la liste des favoris, puis tous les quarts
+    /// d'heure. `$cities` publie sa valeur dès l'abonnement, donc le premier
+    /// chargement part tout de suite.
+    func surveillerFavoris() {
+        guard abonnementFavoris == nil else { return }
+        abonnementFavoris = FavoriteCitiesManager.shared.$cities
+            .debounce(for: .milliseconds(300), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in Task { @MainActor in self?.chargerApercus() } }
+        minuterieApercus = Timer.scheduledTimer(withTimeInterval: 15 * 60, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.chargerApercus() }
+        }
+    }
+
+    func chargerApercus() {
+        var noms = FavoriteCitiesManager.shared.cities.map(\.name)
+        if !noms.contains(where: { $0.lowercased() == city.lowercased() }) { noms.append(city) }
+        Task {
+            let nouveaux = await service.apercus(villes: noms)
+            if !nouveaux.isEmpty { apercus.merge(nouveaux) { _, nouveau in nouveau } }
+            // La ville affichée garde les valeurs de l'écran, quel que soit
+            // l'ordre d'arrivée des deux requêtes.
+            if etatReel != nil { synchroniserApercuCourant() }
+        }
+    }
+
+    /// La rangée de la ville affichée suit ce que montre l'écran (y compris
+    /// en mode démo) : pas deux températures différentes pour la même ville.
+    private func synchroniserApercuCourant() {
+        apercus[city.lowercased()] = ApercuVille(
+            ville: city, temperature: state.temperature,
+            tMin: Double(state.forecast.first?.minTemp ?? Int(state.temperature.rounded())),
+            tMax: Double(state.forecast.first?.maxTemp ?? Int(state.temperature.rounded())),
+            codeWMO: state.weatherCode, estJour: !phaseSolaire.estNuit,
+            iconeForcee: weatherIcon, libelleForce: conditionLibelle)
+    }
 
     /// Dernière météo connue, écrite sur disque.
     ///
@@ -194,6 +240,7 @@ final class WeatherViewModel: ObservableObject {
         )
         etatReel = state
         state = simulation.appliquer(a: state)
+        synchroniserApercuCourant()
         multiReel = result.multi; ensembleReel = result.ensemble
         // Les alertes maison tout de suite (elles sont calculées, pas
         // téléchargées) ; les bulletins officiels arrivent après.
@@ -269,7 +316,7 @@ final class WeatherViewModel: ObservableObject {
     var conditionDecor: String { regimeExtreme?.cle ?? state.condition }
 
     /// Le libellé de l'en-tête : « Canicule » plutôt que « Clear » à 39 °C.
-    var conditionLibelle: String { regimeExtreme?.libelle ?? state.condition }
+    var conditionLibelle: String { regimeExtreme?.libelle ?? libelleCondition(state.condition) }
     var uvLevel: UVLevel           { UVLevel.from(state.uvIndex) }
     var sunriseString: String      { state.sunrise.map { timeString($0) } ?? "--:--" }
     var sunsetString: String       { state.sunset.map  { timeString($0) } ?? "--:--" }

@@ -49,6 +49,51 @@ func iconePourCodeWMO(_ code: Int, nuit: Bool = false) -> String {
     }
 }
 
+/// Le mot qui va avec le code WMO, pour la barre latérale.
+func libellePourCodeWMO(_ code: Int) -> String {
+    switch code {
+    case 0:        return "Ciel dégagé"
+    case 1:        return "Plutôt dégagé"
+    case 2:        return "Partiellement nuageux"
+    case 3:        return "Couvert"
+    case 45, 48:   return "Brouillard"
+    case 51...57:  return "Bruine"
+    case 61, 63:   return "Pluie"
+    case 65:       return "Pluie forte"
+    case 66, 67:   return "Pluie verglaçante"
+    case 71, 73:   return "Neige"
+    case 75, 77:   return "Neige forte"
+    case 80, 81:   return "Averses"
+    case 82:       return "Averses violentes"
+    case 85, 86:   return "Averses de neige"
+    case 95:       return "Orage"
+    case 96, 99:   return "Orage de grêle"
+    default:       return "Nuageux"
+    }
+}
+
+/// Le mot français pour la condition OpenWeather (« Clouds » → « Nuageux »).
+/// L'en-tête l'affichait en anglais, tel quel.
+func libelleCondition(_ condition: String) -> String {
+    switch condition.lowercased() {
+    case "clear":        return "Ciel dégagé"
+    case "clouds":       return "Nuageux"
+    case "rain":         return "Pluie"
+    case "drizzle":      return "Bruine"
+    case "snow":         return "Neige"
+    case "thunderstorm": return "Orage"
+    case "mist", "fog":  return "Brouillard"
+    case "haze":         return "Brume"
+    case "smoke":        return "Fumée"
+    case "dust", "sand": return "Poussière"
+    case "ash":          return "Cendres"
+    case "squall":       return "Rafales"
+    case "tornado":      return "Tornade"
+    case "":             return ""
+    default:             return condition
+    }
+}
+
 // MARK: - Shared icon color helpers (global functions utilisées par plusieurs vues)
 
 func iconPrimaryColor(condition: String) -> Color {

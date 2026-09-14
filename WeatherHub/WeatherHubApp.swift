@@ -32,7 +32,7 @@ struct WeatherHubApp: App {
         MenuBarExtra {
             VStack(alignment: .leading, spacing: 6) {
                 Text(vm.city.capitalized).font(.headline)
-                Text(vm.state.condition).font(.caption).foregroundColor(.secondary)
+                Text(vm.conditionLibelle).font(.caption).foregroundColor(.secondary)
                 Divider()
                 if vm.state.modelCount > 1 {
                     Text(vm.uncertaintyString).font(.caption2).foregroundColor(.secondary)

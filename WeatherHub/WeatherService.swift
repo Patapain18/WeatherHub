@@ -472,16 +472,63 @@ final class WeatherService {
     // MARK: - Networking
 
     private func fetch<T: Decodable>(_ urlStr: String, as type: T.Type) async throws -> T {
-        guard let url = URL(string: urlStr) else { throw WeatherServiceError.invalidAPIKey }
-        let (data, response) = try await session.data(from: url)
-        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
-            throw WeatherServiceError.from(http.statusCode)
-        }
+        let data = try await donnees(urlStr)
         do {
             return try JSONDecoder().decode(T.self, from: data)
         } catch {
             throw WeatherServiceError.decodingError(error.localizedDescription)
         }
+    }
+
+    /// La requête brute, sans décodage — pour les réponses dont la forme
+    /// dépend de la question (un objet ou un tableau, voir `apercus`).
+    private func donnees(_ urlStr: String) async throws -> Data {
+        guard let url = URL(string: urlStr) else { throw WeatherServiceError.invalidAPIKey }
+        let (data, response) = try await session.data(from: url)
+        if let http = response as? HTTPURLResponse, !(200..<300).contains(http.statusCode) {
+            throw WeatherServiceError.from(http.statusCode)
+        }
+        return data
+    }
+
+    // ═══════════════════════════════════════════════════════════════
+    // MARK: - Barre latérale : la météo du moment de plusieurs villes
+    // ═══════════════════════════════════════════════════════════════
+
+    /// La météo du moment de plusieurs villes en UNE requête : Open-Meteo
+    /// accepte des listes de coordonnées (`latitude=48.9,47.6`) et répond
+    /// par un tableau — ou par un objet seul s'il n'y a qu'une ville, d'où
+    /// le double décodage. Le géocodage de chaque ville est caché 24 h
+    /// comme pour la ville principale ; le résultat 10 min. Best-effort :
+    /// une ville introuvable est simplement absente du dictionnaire.
+    func apercus(villes: [String]) async -> [String: ApercuVille] {
+        var coords: [(nom: String, lat: Double, lon: Double)] = []
+        for nom in villes {
+            if let (lat, lon) = try? await geocode(city: nom) { coords.append((nom, lat, lon)) }
+        }
+        guard !coords.isEmpty else { return [:] }
+        let cle = "apercus." + coords.map { $0.nom.lowercased() }.joined(separator: ",")
+        if let caches = cache.get(cle, as: [String: ApercuVille].self) { return caches }
+        let lats = coords.map { String(format: "%.4f", $0.lat) }.joined(separator: ",")
+        let lons = coords.map { String(format: "%.4f", $0.lon) }.joined(separator: ",")
+        let url = "\(Config.API.openMeteoBase)/v1/forecast?latitude=\(lats)&longitude=\(lons)"
+            + "&current=temperature_2m,weather_code,is_day&daily=temperature_2m_max,temperature_2m_min"
+            + "&timezone=auto&forecast_days=1"
+        guard let data = try? await donnees(url) else { return [:] }
+        let reponses: [OMApercuReponse]
+        if let tableau = try? JSONDecoder().decode([OMApercuReponse].self, from: data) { reponses = tableau }
+        else if let seule = try? JSONDecoder().decode(OMApercuReponse.self, from: data) { reponses = [seule] }
+        else { return [:] }
+        var resultat: [String: ApercuVille] = [:]
+        for (c, r) in zip(coords, reponses) {
+            resultat[c.nom.lowercased()] = ApercuVille(
+                ville: c.nom, temperature: r.current.temperature_2m,
+                tMin: r.daily.temperature_2m_min.first ?? r.current.temperature_2m,
+                tMax: r.daily.temperature_2m_max.first ?? r.current.temperature_2m,
+                codeWMO: r.current.weather_code, estJour: r.current.is_day == 1)
+        }
+        cache.set(resultat, for: cle, ttl: 10 * 60)
+        return resultat
     }
 
     private func geocode(city: String) async throws -> (Double, Double) {
@@ -1114,4 +1161,34 @@ final class WeatherService {
         return try await fetch(url, as: OMCurrentForecastResponse.self)
     }
 
+}
+
+
+// MARK: - Aperçu d'une ville (barre latérale)
+
+/// Ce qu'affiche une rangée de la barre latérale : la météo du moment
+/// d'une ville, en trois nombres et une icône.
+struct ApercuVille: Codable, Equatable {
+    let ville: String
+    let temperature: Double
+    let tMin: Double
+    let tMax: Double
+    let codeWMO: Int
+    let estJour: Bool
+    /// Pour la ville affichée : la même icône et le même mot que l'en-tête
+    /// (qui viennent d'OpenWeather), plutôt que le code WMO d'Open-Meteo —
+    /// les deux sources ne sont pas toujours d'accord, et une rangée qui
+    /// contredit l'en-tête juste à côté serait troublante.
+    var iconeForcee: String? = nil
+    var libelleForce: String? = nil
+
+    var icone: String { iconeForcee ?? iconePourCodeWMO(codeWMO, nuit: !estJour) }
+    var libelle: String { libelleForce ?? libellePourCodeWMO(codeWMO) }
+}
+
+struct OMApercuReponse: Decodable {
+    struct Courant: Decodable { let temperature_2m: Double; let weather_code: Int; let is_day: Int }
+    struct Journee: Decodable { let temperature_2m_max: [Double]; let temperature_2m_min: [Double] }
+    let current: Courant
+    let daily: Journee
 }
