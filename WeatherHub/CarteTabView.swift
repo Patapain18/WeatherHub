@@ -60,7 +60,10 @@ enum CoucheCarte: String, CaseIterable, Identifiable {
     /// pensée pour une carte claire ; on la corrige à la volée.
     var traitement: TraitementTuile? {
         switch self {
-        case .radar, .nuages, .vent: return nil
+        case .nuages, .vent:         return nil
+        // Le radar : on retire le « voile » beige des échos les plus faibles
+        // (bruine, virga, artefacts) — la pluie qui n'arrive pas au sol.
+        case .radar:                 return TraitementTuile(gammaAlpha: 1.0, teinte: nil, sansVoile: true)
         case .temperature:           return TraitementTuile(gammaAlpha: 0.55, teinte: nil)
         case .pression:              return TraitementTuile(gammaAlpha: 0.60, teinte: nil)
         case .precipitations:        return TraitementTuile(gammaAlpha: 0.30, teinte: (0.25, 0.55, 1.0))
@@ -70,7 +73,14 @@ enum CoucheCarte: String, CaseIterable, Identifiable {
     /// Ce que veulent dire les couleurs, pour la légende.
     var legende: [(couleur: Color, texte: String)] {
         switch self {
-        case .radar, .precipitations:
+        // La palette que RainViewer sert réellement (le paramètre de palette
+        // de l'URL est ignoré, vérifié tuile par tuile) : cyan → bleu →
+        // bleu nuit → jaune → orange/rouge. Le beige des traces est retiré.
+        case .radar:
+            return [(Color(red: 0.42, green: 0.82, blue: 0.92), "Faible"), (Color(red: 0.0, green: 0.53, blue: 0.75), "Modérée"),
+                    (Color(red: 0.0, green: 0.32, blue: 0.50), "Forte"), (Color(red: 1.0, green: 0.82, blue: 0.0), "Très forte"),
+                    (Color(red: 0.95, green: 0.21, blue: 0.0), "Violente / orage")]
+        case .precipitations:
             return [(.green, "Faible"), (.yellow, "Modérée"), (.orange, "Forte"), (.red, "Violente / orage")]
         case .nuages:
             return [(.white.opacity(0.3), "Voile"), (.white.opacity(0.7), "Couvert"), (.white, "Très dense")]
@@ -94,6 +104,18 @@ struct TraitementTuile {
     /// Couleur imposée (0–1). `nil` conserve la couleur d'origine — pour
     /// la température ou la pression, où la teinte porte l'information.
     let teinte: (r: Double, g: Double, b: Double)?
+    /// Radar : efface les pixels beiges — la famille de teintes que
+    /// RainViewer réserve aux échos les plus faibles (de (99,97,89) à
+    /// (222,208,151) : teinte 42–48°, saturation < 35 %). Les jaunes de
+    /// la pluie forte ont la même teinte mais une saturation de 100 %.
+    var sansVoile: Bool = false
+
+    /// Beige = une couleur chaude et peu saturée : r ≥ g ≥ b, et l'écart
+    /// entre la composante la plus forte et la plus faible reste sous 40 %.
+    private func estBeige(_ r: Double, _ g: Double, _ b: Double) -> Bool {
+        guard r > 0, r >= g, g >= b else { return false }
+        return (r - b) / r < 0.40
+    }
 
     func appliquer(_ data: Data) -> Data? {
         guard let src = CGImageSourceCreateWithData(data as CFData, nil),
@@ -112,6 +134,14 @@ struct TraitementTuile {
                 let i = y * stride + x * 4
                 let a = Double(px[i + 3])
                 guard a > 0 else { continue }
+                if sansVoile {
+                    // Le tampon est prémultiplié : la couleur d'origine, c'est la valeur divisée par l'opacité
+                    let k = 255.0 / a
+                    if estBeige(Double(px[i]) * k, Double(px[i + 1]) * k, Double(px[i + 2]) * k) {
+                        px[i] = 0; px[i + 1] = 0; px[i + 2] = 0; px[i + 3] = 0
+                        continue
+                    }
+                }
                 let na = 255.0 * pow(a / 255.0, gammaAlpha)
                 if let teinte {
                     // Couleur imposée, prémultipliée par la nouvelle opacité.
@@ -435,9 +465,10 @@ struct CarteTabView: View {
     private var modeleURL: String? {
         if couche == .radar {
             guard !hoteRadar.isEmpty, images.indices.contains(indexImage) else { return nil }
-            // /256/ = taille des tuiles, /4/ = palette « The Weather Channel »
-            // (vert → jaune → rouge, la plus lisible pour repérer un orage),
-            // /1_1 = lissage et neige activés.
+            // /256/ = taille des tuiles, /4/ = palette demandée — que le serveur
+            // ignore désormais (vérifié : 0, 2 et 4 renvoient les mêmes pixels),
+            // /1_1 = lissage et neige activés. Le voile beige des échos faibles
+            // est retiré par `TraitementTuile.sansVoile`.
             return "\(hoteRadar)\(images[indexImage].chemin)/256/{z}/{x}/{y}/4/1_1.png"
         }
         guard let l = couche.coucheOpenWeather else { return nil }
