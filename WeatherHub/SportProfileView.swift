@@ -1,38 +1,53 @@
 import SwiftUI
 
-// MARK: - Onglet Profil Sportif
+// MARK: - Le profil sportif, en feuille de réglages
 
+/// Ouvert depuis la bulle « réglages » de l'onglet Sport (ce n'était plus
+/// un onglet à part entière : on n'y va que pour régler ses sports). La
+/// section « Conditions aujourd'hui » est partie — l'onglet Sport dit
+/// déjà tout ça, en mieux.
 struct SportProfileView: View {
     @ObservedObject var vm: WeatherViewModel
     @StateObject private var store = SportProfileStore.shared
     @State private var expandedSport: String? = nil
     @State private var editingSport: FavoriteSport? = nil
+    @Environment(\.dismiss) private var fermer
+
+    /// 640 de large ; en hauteur, ce que l'écran permet.
+    private var hauteur: CGFloat {
+        min(660, (NSScreen.main?.visibleFrame.height ?? 800) - 120)
+    }
 
     var body: some View {
-        ScrollView {
-            SondeDefilement()
+        ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
 
                 // MARK: Header
-                VStack(spacing: 6) {
+                HStack(alignment: .top, spacing: 14) {
                     Image(systemName: "figure.run.circle.fill")
-                        .font(.system(size: 44))
+                        .font(.system(size: 36))
                         .symbolRenderingMode(.palette)
                         .foregroundStyle(.texte, .cyan)
-                    Text("Mon profil sportif")
-                        .font(.largeTitle.bold()).foregroundColor(.texte)
-                    Text("Seuils personnalisés selon vos sports")
-                        .font(.subheadline).foregroundColor(.texte.opacity(0.55))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Mon profil sportif")
+                            .font(.title2.bold()).foregroundColor(.texte)
+                        Text("Vos sports, et les seuils qui comptent pour chacun")
+                            .font(.subheadline).foregroundColor(.texte.opacity(0.55))
+                    }
+                    Spacer()
+                    Button { fermer() } label: {
+                        Image(systemName: "xmark")
+                            .font(.system(size: 10, weight: .bold)).foregroundColor(.texte.opacity(0.66))
+                            .frame(width: 24, height: 24)
+                            .background(Color.surface.opacity(0.12)).clipShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .keyboardShortcut(.escape, modifiers: [])
+                    .accessibilityLabel("Fermer")
                 }
-                .padding(.top, 55)
-                .padding(.bottom, 28)
-
-                // MARK: Conditions du jour (sports activés)
-                if !store.enabled.isEmpty {
-                    todaySection
-                        .padding(.horizontal, 40)
-                        .padding(.bottom, 24)
-                }
+                .padding(.horizontal, 24)
+                .padding(.top, 22)
+                .padding(.bottom, 22)
 
                 // MARK: Liste tous les sports
                 VStack(spacing: 12) {
@@ -44,7 +59,7 @@ struct SportProfileView: View {
                             .font(.caption).foregroundColor(.texte.opacity(0.4))
                             .buttonStyle(.plain)
                     }
-                    .padding(.horizontal, 40)
+                    .padding(.horizontal, 24)
 
                     ForEach($store.sports) { $sport in
                         SportRowCard(sport: $sport,
@@ -55,105 +70,17 @@ struct SportProfileView: View {
                                          }
                                      },
                                      onToggleEnabled: { store.toggle(sport) })
-                        .padding(.horizontal, 40)
+                        .padding(.horizontal, 24)
                     }
                 }
-                .padding(.bottom, 40)
+                .padding(.bottom, 28)
             }
         }
+        .frame(width: 640, height: hauteur)
+        .fondCarte()
         .sheet(item: $editingSport) { sport in
             SportThresholdEditor(sport: sport) { updated in
                 store.update(updated)
-            }
-        }
-    }
-
-    // MARK: - Section "Aujourd'hui"
-
-    private var todaySection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Conditions aujourd'hui")
-                .font(.headline).foregroundColor(.texte)
-
-            ForEach(store.enabled) { sport in
-                let eval = SportEvaluator.evaluate(sport: sport, state: vm.state)
-                TodayEvalRow(evaluation: eval)
-            }
-        }
-        .padding(20)
-        .fondCarte()
-        .cornerRadius(24)
-        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-    }
-}
-
-// MARK: - Ligne évaluation du jour
-
-struct TodayEvalRow: View {
-    let evaluation: SportEvaluation
-    @State private var expanded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation(.spring(duration: 0.4, bounce: 0.25)) { expanded.toggle() } } label: {
-                HStack(spacing: 12) {
-                    Image(systemName: evaluation.sport.icon)
-                        .font(.title3).foregroundColor(.texte).frame(width: 28)
-
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(evaluation.sport.name)
-                            .font(.subheadline.bold()).foregroundColor(.texte)
-                        if !evaluation.reasons.isEmpty {
-                            Text(evaluation.reasons.first ?? "")
-                                .font(.caption).foregroundColor(.texte.opacity(0.55))
-                                .lineLimit(1)
-                        }
-                    }
-
-                    Spacer()
-
-                    HStack(spacing: 5) {
-                        Image(systemName: evaluation.level.icon)
-                            .font(.system(size: 14))
-                        Text(evaluation.level.label)
-                            .font(.caption.bold())
-                    }
-                    .foregroundColor(evaluation.level.color)
-                    .padding(.horizontal, 10).padding(.vertical, 5)
-                    .background(evaluation.level.color.opacity(0.18))
-                    .cornerRadius(10)
-
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down")
-                        .font(.caption2).foregroundColor(.texte.opacity(0.35))
-                }
-                .padding(.vertical, 8)
-            }
-            .buttonStyle(.plain)
-
-            if expanded {
-                VStack(alignment: .leading, spacing: 6) {
-                    ForEach(evaluation.reasons, id: \.self) { reason in
-                        Text(reason).font(.caption).foregroundColor(.texte.opacity(0.65))
-                    }
-                    if !evaluation.tips.isEmpty {
-                        Divider().background(Color.surface.opacity(0.1))
-                        ForEach(evaluation.tips, id: \.self) { tip in
-                            HStack(alignment: .top, spacing: 6) {
-                                Text("→").font(.caption).foregroundColor(.cyan)
-                                Text(tip).font(.caption).foregroundColor(.texte.opacity(0.7))
-                            }
-                        }
-                    }
-                }
-                .padding(.leading, 40).padding(.bottom, 8)
-                .transition(.asymmetric(
-                    insertion: .opacity.combined(with: .move(edge: .top)).combined(with: .scale(scale: 0.96, anchor: .top)),
-                    removal: .opacity.combined(with: .scale(scale: 0.96, anchor: .top))
-                ))
-            }
-
-            if evaluation.sport.id != SportProfileStore.shared.enabled.last?.id {
-                Divider().background(Color.surface.opacity(0.1))
             }
         }
     }

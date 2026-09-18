@@ -2,22 +2,38 @@ import SwiftUI
 
 struct SportTabView: View {
     @ObservedObject var vm: WeatherViewModel
+    /// La feuille du profil sportif (l'ancien onglet Profil).
+    @State private var profilOuvert = false
 
     var body: some View {
         ScrollView {
             SondeDefilement()
             VStack(spacing: 28) {
-                // MARK: Header
-                VStack(spacing: 6) {
-                    Text("Sport & Conditions")
-                        .font(.largeTitle.bold())
-                        .foregroundColor(.texte)
+                // MARK: Header — et la bulle « réglages » à droite
+                ZStack(alignment: .topTrailing) {
+                    VStack(spacing: 6) {
+                        Text("Sport & Conditions")
+                            .font(.largeTitle.bold())
+                            .foregroundColor(.texte)
 
-                    HStack(spacing: 16) {
-                        contextPill(icon: "thermometer.medium", label: "\(Int(vm.state.temperature))°C")
-                        contextPill(icon: "wind",               label: "\(Int(vm.state.windSpeed)) km/h")
-                        contextPill(icon: "cloud",              label: vm.state.condition.isEmpty ? "—" : vm.conditionLibelle)
+                        HStack(spacing: 16) {
+                            contextPill(icon: "thermometer.medium", label: "\(Int(vm.state.temperature))°C")
+                            contextPill(icon: "wind",               label: "\(Int(vm.state.windSpeed)) km/h")
+                            contextPill(icon: "cloud",              label: vm.state.condition.isEmpty ? "—" : vm.conditionLibelle)
+                        }
                     }
+                    .frame(maxWidth: .infinity)
+
+                    Button { profilOuvert = true } label: {
+                        Image(systemName: "gearshape.fill")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.texte.opacity(0.7))
+                            .padding(10).fondCarte().clipShape(Circle())
+                            .accessibilityLabel("Mon profil sportif")
+                    }
+                    .buttonStyle(.plain)
+                    .help("Mes sports et leurs seuils")
+                    .padding(.trailing, 40)
                 }
 
                 // MARK: Quand sortir
@@ -46,6 +62,7 @@ struct SportTabView: View {
             .padding(.top, 60)
             .padding(.bottom, 40)
         }
+        .sheet(isPresented: $profilOuvert) { SportProfileView(vm: vm) }
     }
 
     // MARK: - Quand sortir ?

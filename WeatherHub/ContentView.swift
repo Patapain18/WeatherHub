@@ -15,7 +15,8 @@ enum AppTab: String, CaseIterable {
     /// accessibles par le menu « Plus » : sept onglets côte à côte, c'est
     /// trop pour être lisible, et Nouveautés/Suggestions se consultent
     /// rarement.
-    static let principaux: [AppTab] = [.weather, .horaire, .carte, .sport, .profile]
+    /// Profil n'est plus un onglet : il s'ouvre depuis la bulle réglages de Sport.
+    static let principaux: [AppTab] = [.weather, .horaire, .carte, .sport]
     static let secondaires: [AppTab] = [.whatsNew, .suggestions]
 
     var icon: String {
