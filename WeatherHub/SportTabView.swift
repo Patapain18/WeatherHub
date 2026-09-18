@@ -12,7 +12,7 @@ struct SportTabView: View {
                 // MARK: Header — et la bulle « réglages » à droite
                 ZStack(alignment: .topTrailing) {
                     VStack(spacing: 6) {
-                        Text("Sport & Conditions")
+                        Text("Sport")
                             .font(.largeTitle.bold())
                             .foregroundColor(.texte)
 
