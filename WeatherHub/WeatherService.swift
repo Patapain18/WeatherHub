@@ -808,6 +808,34 @@ final class WeatherService {
         return (rep.host, passe + futur)
     }
 
+    /// Les instants disponibles de l'image satellite Meteosat (MTG, composite
+    /// « GeoColour » : couleurs réelles le jour, infrarouge et lumières des
+    /// villes la nuit), une toutes les 10 min sur les deux dernières heures.
+    /// Le service EUMETView est un WMS : pas de liste d'images, mais une
+    /// dimension « time » dans ses capacités, dont on lit la valeur par
+    /// défaut — la dernière image produite. `chemin` porte l'instant ISO,
+    /// que l'URL des tuiles reprend tel quel. Best-effort.
+    func imagesSatellite() async -> [ImageRadar] {
+        let cle = "satellite.instants"
+        if let caches = cache.get(cle, as: [ImageRadar].self) { return caches }
+        guard let data = try? await donnees(Config.API.eumetsatCapacites),
+              let xml = String(data: data, encoding: .utf8) else { return [] }
+        // La couche, puis son attribut default="2026-09-18T14:30:00Z"
+        guard let debut = xml.range(of: "<Name>rgb_geocolour</Name>") ?? xml.range(of: "<Name>mtg_fd:rgb_geocolour</Name>"),
+              let plage = xml[debut.upperBound...].range(of: "default=\""),
+              let fin = xml[plage.upperBound...].firstIndex(of: "\"") else { return [] }
+        let iso = String(xml[plage.upperBound..<fin])
+        let fmt = ISO8601DateFormatter()
+        guard let derniere = fmt.date(from: iso) else { return [] }
+        let images = (0..<13).reversed().map { k -> ImageRadar in
+            let date = derniere.addingTimeInterval(-Double(k) * 600)
+            return ImageRadar(id: Int(date.timeIntervalSince1970), date: date,
+                              chemin: fmt.string(from: date), estPrevision: false)
+        }
+        cache.set(images, for: cle, ttl: 5 * 60)
+        return images
+    }
+
     /// Coordonnées de la ville affichée, pour centrer la carte.
     /// Passe par le cache du géocodage : gratuit après le premier appel.
     func coordonnees(city: String) async -> (lat: Double, lon: Double)? {

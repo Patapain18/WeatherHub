@@ -8,13 +8,14 @@ import MapKit
 // MARK: - Couches disponibles
 
 enum CoucheCarte: String, CaseIterable, Identifiable {
-    case radar, nuages, temperature, vent, pression, precipitations
+    case radar, satellite, nuages, temperature, vent, pression, precipitations
 
     var id: String { rawValue }
 
     var titre: String {
         switch self {
         case .radar:          return "Radar"
+        case .satellite:      return "Satellite"
         case .nuages:         return "Nuages"
         case .temperature:    return "Température"
         case .vent:           return "Vent"
@@ -26,6 +27,7 @@ enum CoucheCarte: String, CaseIterable, Identifiable {
     var icone: String {
         switch self {
         case .radar:          return "dot.radiowaves.left.and.right"
+        case .satellite:      return "globe.europe.africa.fill"
         case .nuages:         return "cloud.fill"
         case .temperature:    return "thermometer.medium"
         case .vent:           return "wind"
@@ -34,15 +36,25 @@ enum CoucheCarte: String, CaseIterable, Identifiable {
         }
     }
 
-    /// Le radar est une MESURE (écho radar réel) ; les autres couches
-    /// sont des sorties de modèle. La distinction est affichée.
-    var estMesure: Bool { self == .radar }
+    /// La source, pour la ligne sous la légende.
+    var source: String {
+        switch self {
+        case .radar:     return "Source : RainViewer (radar)"
+        case .satellite: return "Source : EUMETSAT (Meteosat)"
+        default:         return "Source : OpenWeather (modèle)"
+        }
+    }
 
-    /// Identifiant de couche chez OpenWeather. Nil pour le radar, qui
-    /// vient de RainViewer.
+    /// Le radar et le satellite sont des MESURES (écho radar, image
+    /// Meteosat) ; les autres couches sont des sorties de modèle. La
+    /// distinction est affichée, et ces deux-là ont un curseur temporel.
+    var estMesure: Bool { self == .radar || self == .satellite }
+
+    /// Identifiant de couche chez OpenWeather. Nil pour le radar (RainViewer)
+    /// et le satellite (EUMETSAT).
     var coucheOpenWeather: String? {
         switch self {
-        case .radar:          return nil
+        case .radar, .satellite: return nil
         case .nuages:         return "clouds_new"
         case .temperature:    return "temp_new"
         case .vent:           return "wind_new"
@@ -60,7 +72,7 @@ enum CoucheCarte: String, CaseIterable, Identifiable {
     /// pensée pour une carte claire ; on la corrige à la volée.
     var traitement: TraitementTuile? {
         switch self {
-        case .nuages, .vent:         return nil
+        case .nuages, .vent, .satellite: return nil
         // Le radar : on retire le « voile » beige des échos les plus faibles
         // (bruine, virga, artefacts) — la pluie qui n'arrive pas au sol.
         case .radar:                 return TraitementTuile(gammaAlpha: 1.0, teinte: nil, sansVoile: true)
@@ -82,6 +94,8 @@ enum CoucheCarte: String, CaseIterable, Identifiable {
                     (Color(red: 0.95, green: 0.21, blue: 0.0), "Violente / orage")]
         case .precipitations:
             return [(.green, "Faible"), (.yellow, "Modérée"), (.orange, "Forte"), (.red, "Violente / orage")]
+        case .satellite:
+            return [(.white, "Nuages"), (Color(red: 1.0, green: 0.78, blue: 0.45), "Lumières des villes, la nuit")]
         case .nuages:
             return [(.white.opacity(0.3), "Voile"), (.white.opacity(0.7), "Couvert"), (.white, "Très dense")]
         case .temperature:
@@ -199,6 +213,22 @@ final class TuilesSurZoom: MKTileOverlay {
         self.zoomSource = zoomSource
         self.traitement = traitement
         super.init(urlTemplate: urlTemplate)
+    }
+
+    /// Un WMS (le satellite EUMETSAT) ne connaît pas {z}/{x}/{y} : il veut
+    /// l'emprise de la tuile en mètres Web Mercator (EPSG:3857). Quand le
+    /// modèle d'URL contient `{bbox}`, on la calcule ; sinon MapKit fait
+    /// comme d'habitude. Une tuile (x, y) au niveau z couvre, sur un monde
+    /// de 2·π·R de côté, la case x/2ᶻ en longitude — même chose en y, en
+    /// partant du haut.
+    override func url(forTilePath path: MKTileOverlayPath) -> URL {
+        guard let modele = urlTemplate, modele.contains("{bbox}") else { return super.url(forTilePath: path) }
+        let n = Double(1 << path.z), rayon = 6378137.0
+        func x(_ t: Double) -> Double { (t / n * 2 - 1) * .pi * rayon }
+        func y(_ t: Double) -> Double { (1 - t / n * 2) * .pi * rayon }
+        let bbox = String(format: "%.1f,%.1f,%.1f,%.1f",
+                          x(Double(path.x)), y(Double(path.y + 1)), x(Double(path.x + 1)), y(Double(path.y)))
+        return URL(string: modele.replacingOccurrences(of: "{bbox}", with: bbox)) ?? super.url(forTilePath: path)
     }
 
     override func loadTile(at path: MKTileOverlayPath, result brut: @escaping (Data?, Error?) -> Void) {
@@ -387,8 +417,19 @@ struct CarteTabView: View {
     @State private var couche: CoucheCarte = .radar
     @State private var centre: CLLocationCoordinate2D? = nil
     @State private var hoteRadar = ""
-    @State private var images: [ImageRadar] = []
+    @State private var imagesRadar: [ImageRadar] = []
+    @State private var imagesSatellite: [ImageRadar] = []
     @State private var indexImage = 0
+
+    /// Les images de la couche affichée (le radar et le satellite ont
+    /// chacune les leurs ; les couches de modèle n'en ont pas).
+    private var images: [ImageRadar] {
+        switch couche {
+        case .radar:     return imagesRadar
+        case .satellite: return imagesSatellite
+        default:         return []
+        }
+    }
     @State private var lecture = false
     @State private var opacite = 0.75
 
@@ -405,7 +446,7 @@ struct CarteTabView: View {
             entete
             ZStack(alignment: .bottom) {
                 carte
-                if couche == .radar { controleTemps }
+                if couche.estMesure { controleTemps }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .cornerRadius(22)
@@ -418,10 +459,17 @@ struct CarteTabView: View {
             if let c = await WeatherService.shared.coordonnees(city: vm.city) {
                 centre = CLLocationCoordinate2D(latitude: c.lat, longitude: c.lon)
             }
-            let r = await WeatherService.shared.imagesRadar()
+            async let radar = WeatherService.shared.imagesRadar()
+            async let satellite = WeatherService.shared.imagesSatellite()
+            let r = await radar
             hoteRadar = r.hote
-            images = r.images
+            imagesRadar = r.images
+            imagesSatellite = await satellite
             // On démarre sur la dernière MESURE, pas sur la prévision.
+            indexImage = max(0, (images.lastIndex { !$0.estPrevision } ?? images.count - 1))
+        }
+        // Changer de couche : on repart de la dernière image de la nouvelle
+        .onChange(of: couche) { _, _ in
             indexImage = max(0, (images.lastIndex { !$0.estPrevision } ?? images.count - 1))
         }
         .onReceive(horloge) { _ in
@@ -435,8 +483,8 @@ struct CarteTabView: View {
     private var entete: some View {
         VStack(spacing: 6) {
             Text("Carte").font(.largeTitle.bold()).foregroundColor(.texte)
-            Text(couche.estMesure
-                 ? "\(vm.city.capitalized) · radar mesuré, deux dernières heures"
+            Text(couche == .radar ? "\(vm.city.capitalized) · radar mesuré, deux dernières heures"
+                 : couche == .satellite ? "\(vm.city.capitalized) · Meteosat, une image toutes les 10 min, deux dernières heures"
                  : "\(vm.city.capitalized) · \(couche.titre.lowercased()), sortie de modèle OpenWeather")
                 .font(.caption).foregroundColor(.texte.opacity(0.55))
         }
@@ -448,7 +496,9 @@ struct CarteTabView: View {
         if let centre {
             CarteMeteoView(centre: centre, modeleURL: modeleURL, opacite: opacite,
                            traitement: couche.traitement,
-                           zoomMax: couche == .radar ? 7 : 12)
+                           // Le radar s'arrête au niveau 7 (~1 km/pixel) ; Meteosat
+                           // voit à 1 km aussi, mais le WMS rend à la demande : 8.
+                           zoomMax: couche == .radar ? 7 : couche == .satellite ? 8 : 12)
         } else {
             ZStack {
                 Color.surface.opacity(0.06)
@@ -471,6 +521,15 @@ struct CarteTabView: View {
             // est retiré par `TraitementTuile.sansVoile`.
             return "\(hoteRadar)\(images[indexImage].chemin)/256/{z}/{x}/{y}/4/1_1.png"
         }
+        if couche == .satellite {
+            guard images.indices.contains(indexImage) else { return nil }
+            // Un GetMap WMS par tuile ; `{bbox}` est rempli par TuilesSurZoom.
+            // Le paramètre `time` est indispensable : sans lui, le serveur
+            // renvoie une vieille image de nuit (vérifié).
+            return "\(Config.API.eumetsatWMS)?service=WMS&version=1.3.0&request=GetMap&layers=mtg_fd:rgb_geocolour&styles="
+                + "&crs=EPSG:3857&width=256&height=256&format=image/png&transparent=true"
+                + "&time=\(images[indexImage].chemin)&bbox={bbox}"
+        }
         guard let l = couche.coucheOpenWeather else { return nil }
         return "\(Config.API.openWeatherTuiles)/\(l)/{z}/{x}/{y}.png?appid=\(Config.openWeatherAPIKey)"
     }
@@ -480,7 +539,7 @@ struct CarteTabView: View {
     private var controleTemps: some View {
         VStack(spacing: 8) {
             if images.isEmpty {
-                Text("Radar indisponible pour le moment")
+                Text("\(couche.titre) indisponible pour le moment")
                     .font(.caption).foregroundColor(.texte.opacity(0.6))
             } else {
                 let img = images[min(indexImage, images.count - 1)]
@@ -492,7 +551,7 @@ struct CarteTabView: View {
                             .background(Color.surface.opacity(0.15)).clipShape(Circle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(lecture ? "Mettre en pause" : "Animer le radar")
+                    .accessibilityLabel(lecture ? "Mettre en pause" : "Animer \(couche == .radar ? "le radar" : "le satellite")")
 
                     // Le curseur parcourt les images : passé à gauche,
                     // prévision courte à droite quand elle existe.
@@ -500,7 +559,7 @@ struct CarteTabView: View {
                         get: { Double(indexImage) },
                         set: { indexImage = Int($0.rounded()); lecture = false }
                     ), in: 0...Double(max(0, images.count - 1)), step: 1)
-                    .accessibilityLabel("Instant du radar")
+                    .accessibilityLabel("Instant de l'image")
 
                     VStack(alignment: .trailing, spacing: 1) {
                         Text(Self.heure.string(from: img.date))
@@ -553,7 +612,7 @@ struct CarteTabView: View {
                     }
                 }
                 Spacer()
-                Text(couche.estMesure ? "Source : RainViewer (radar)" : "Source : OpenWeather (modèle)")
+                Text(couche.source)
                     .font(.caption2).foregroundColor(.texte.opacity(0.4))
             }
         }
