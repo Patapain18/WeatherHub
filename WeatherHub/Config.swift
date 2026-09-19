@@ -4,7 +4,7 @@
 
 enum Config {
     static let openWeatherAPIKey = Cles.openWeather
-    static let appVersion = "1.5.0"
+    static let appVersion = "2.0.0"
 
     enum API {
         static let openWeatherBase = "https://api.openweathermap.org"

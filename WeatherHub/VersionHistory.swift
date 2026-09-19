@@ -49,6 +49,100 @@ struct VersionHistory {
 
         // ── Version actuelle ────────────────────────────────────────────
         AppVersion(
+            number: "2.0.0",
+            date: "Septembre 2026",
+            title: "Le ciel sur le GPU",
+            features: [
+                VersionFeature(
+                    icon: "square.grid.2x2.fill",
+                    title: "Tuiles façon Apple Météo",
+                    description: "L'onglet Météo devient une grille de tuiles : course du soleil, UV, vent, accord des modèles, ressenti, humidité, tendance, précipitations, nuages, meilleur sport, comparaison avec hier, rafales, visibilité, pression, qualité de l'air, point de rosée.",
+                    type: .new
+                ),
+                VersionFeature(
+                    icon: "chart.xyaxis.line",
+                    title: "Une fiche par tuile",
+                    description: "Un clic ouvre le détail : la valeur du moment, son barème, une phrase d'action, 48 h de prévision en aire colorée avec le pourcentage d'accord des modèles, les repères du jour et une explication.",
+                    type: .new
+                ),
+                VersionFeature(
+                    icon: "sparkles",
+                    title: "Le ciel calculé sur le GPU",
+                    description: "Un shader Metal dessine le ciel pixel par pixel : pluie fine, averse, brouillard, neige scintillante, soleil photographique, nuit étoilée, nuages, orage et ses éclairs — tous choisis sur maquette, pour 6 % de processeur au lieu de 30.",
+                    type: .new
+                ),
+                VersionFeature(
+                    icon: "tornado",
+                    title: "Dix régimes extrêmes",
+                    description: "Tornade, cyclone, grêle, blizzard, tempête, pluie verglaçante, déluge, tempête de poussière, canicule et grand froid, détectés dans les données : chacun a son décor et sa consigne de sécurité.",
+                    type: .new
+                ),
+                VersionFeature(
+                    icon: "aqi.medium",
+                    title: "Qualité de l'air, trois sources",
+                    description: "CAMS Europe et global, OpenWeather et les capteurs citoyens Sensor.Community, ramenés au même indice européen : l'app affiche la médiane et l'accord entre sources.",
+                    type: .improved
+                ),
+                VersionFeature(
+                    icon: "sidebar.left",
+                    title: "Barre des villes",
+                    description: "Sur les fenêtres larges, vos favoris à gauche avec leur météo du moment, façon Apple Météo. Un clic change de ville, un clic droit ajoute ou retire un favori.",
+                    type: .new
+                ),
+                VersionFeature(
+                    icon: "clock.fill",
+                    title: "Heures : le graphique-loupe",
+                    description: "Les 48 heures en un seul dessin — courbe, icônes du temps, nuits, pluie, lever et coucher. Survolez une heure pour tout lire, sans liste.",
+                    type: .new
+                ),
+                VersionFeature(
+                    icon: "globe.europe.africa.fill",
+                    title: "Couche Satellite",
+                    description: "L'image Meteosat d'EUMETSAT, une toutes les 10 minutes sur deux heures : la pleine mer et les nuages sans pluie, que le radar ne voit pas.",
+                    type: .new
+                ),
+                VersionFeature(
+                    icon: "dot.radiowaves.left.and.right",
+                    title: "Radar plus juste",
+                    description: "Le voile des échos les plus faibles est retiré — la carte ne montre que la pluie qui atteint le sol — et la légende suit la vraie palette.",
+                    type: .improved
+                ),
+                VersionFeature(
+                    icon: "theatermasks.fill",
+                    title: "Mode démo",
+                    description: "Menu ⋯ → Mode démo : forcez une condition, un moment de la journée ou une alerte pour voir l'app sous tous les temps. Une visite guidée en ligne de commande enchaîne les décors pour les démonstrations.",
+                    type: .new
+                ),
+                VersionFeature(
+                    icon: "rectangle.bottomthird.inset.filled",
+                    title: "Barre d'onglets compacte",
+                    description: "Quatre onglets, et l'onglet actif s'étire pour montrer son nom. Le profil sportif s'ouvre depuis une bulle réglages dans Sport.",
+                    type: .improved
+                ),
+                VersionFeature(
+                    icon: "wind",
+                    title: "Le vrai sens du vent",
+                    description: "Pluie, neige, grêlons et rafales penchent selon la direction réelle du vent, et le soleil de midi passe sous le champ de recherche au lieu de se cacher derrière.",
+                    type: .improved
+                ),
+                VersionFeature(
+                    icon: "battery.75percent",
+                    title: "Économie d'énergie",
+                    description: "Le ciel se met en pause quand la fenêtre est cachée, et tourne à 30 images par seconde sur batterie.",
+                    type: .improved
+                ),
+                VersionFeature(
+                    icon: "checkmark.circle",
+                    title: "Corrections",
+                    description: "La bruine tombait dans la pluie, les alertes manquaient en mode démo, la couverture nuageuse se superposait, la courbe était coupée à 100 %, le champ de recherche effaçait la ville au lancement, et l'en-tête parlait anglais.",
+                    type: .fixed
+                ),
+            ],
+            isCurrentVersion: true
+        ),
+
+        // ── Versions précédentes ────────────────────────────────────────
+        AppVersion(
             number: "1.5.0",
             date: "Avril 2026",
             title: "Profil sportif & Données avancées",
@@ -114,7 +208,7 @@ struct VersionHistory {
                     type: .new
                 ),
             ],
-            isCurrentVersion: true
+            isCurrentVersion: false
         ),
 
         // ── Historique ──────────────────────────────────────────────────
